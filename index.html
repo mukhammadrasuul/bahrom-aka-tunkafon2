@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chek</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: flex-start;
+            align-items: left;
+            background-color: #f8f8f8;
+        }
+
+        .receipt-container {
+            justify-content: flex-start;
+            align-items: left;
+        }
+
+        .receipt {
+            width: 65mm;
+            padding: 0px;
+            background-color: white;
+        }
+
+        .receipt-header {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+
+        .date-header {
+            font-weight: bold;
+            font-size: 12px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            padding-left: 5px;
+        }
+
+        .line {
+            border-bottom: 1px dashed black;
+            margin: 10px 0;
+        }
+
+        .transaction-details {
+            font-size: 10px;
+            text-align: left;
+            margin-bottom: 10px;
+        }
+
+        .transaction-details div {
+            display: flex;
+            justify-content: space-between;
+            margin: 2px 5px;
+        }
+
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin: 5px;
+            font-size: 12px;
+        }
+
+        .item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            margin: 3px 5px;
+        }
+
+        .item-number {
+            margin-right: 5px;
+        }
+
+        .item-name {
+            flex-grow: 1;
+        }
+
+        .item-quantity {
+            margin-right: 10px;
+            text-align: right;
+        }
+
+        .item-price {
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .total-section {
+            font-weight: bold;
+            font-size: 12px;
+            margin: 5px;
+        }
+
+        .footer {
+            margin-top: 20px;
+            font-size: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body onfocus="window.close()">
+<div class="receipt-container">
+    <div class="receipt" id="receipt"></div>
+</div>
+
+<script>
+    var params = new URLSearchParams(window.location.search);
+
+    // ---- Helpers (mirroring the PHP functions) ----
+
+    // PHP urldecode(): '+' becomes space, %XX decoded. Safe fallback on error.
+    function phpUrldecode(str) {
+        try {
+            return decodeURIComponent(String(str).replace(/\+/g, ' '));
+        } catch (e) {
+            return String(str);
+        }
+    }
+
+    // cleanInput(): trim(urldecode($str)). Note: URLSearchParams already
+    // decodes once, so this is the second decode the original code did.
+    function cleanInput(str) {
+        return phpUrldecode(str).trim();
+    }
+
+    // Get a parameter, split by comma, clean each piece. [] if missing.
+    function getCleanList(name) {
+        var v = params.get(name);
+        return v === null ? [] : v.split(',').map(cleanInput);
+    }
+
+    // Get a single cleaned parameter value
+    function getClean(name) {
+        var v = params.get(name);
+        return v === null ? '' : cleanInput(v);
+    }
+
+    // PHP intval(): leading integer, 0 if not numeric
+    function intval(v) {
+        var n = parseInt(v, 10);
+        return isNaN(n) ? 0 : n;
+    }
+
+    // PHP floatval(): leading float, 0 if not numeric
+    function floatval(v) {
+        var n = parseFloat(v);
+        return isNaN(n) ? 0 : n;
+    }
+
+    // PHP number_format($n, decimals, '.', ',')
+    function numberFormat(value, decimals) {
+        decimals = decimals || 0;
+        var n = parseFloat(value);
+        if (isNaN(n)) n = 0;
+        return n.toLocaleString('en-US', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+    }
+
+    // PHP substr($s, start, length)
+    function substr(s, start, length) {
+        s = String(s);
+        return s.substring(start, start + length);
+    }
+
+    // PHP htmlspecialchars()
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // ---- Extract data ----
+    var tovar   = getCleanList('tovar');
+    var miqdori = getCleanList('miqdori');
+    var jami    = getCleanList('jami');
+    var narxi   = getCleanList('narxi');
+    var sana    = getCleanList('sana');
+
+    var usta    = getClean('usta');
+    var obyekt  = getClean('obyekt');
+    var telefon = getClean('telefon');
+
+    // ---- Group items by date (replaces the for-loop + $groupedData) ----
+    var groupedData = {};
+    for (var i = 0; i < tovar.length; i++) {
+        // Skip empty entries
+        if (!tovar[i] || !sana[i]) continue;
+
+        var currentDate = sana[i];
+        if (!groupedData[currentDate]) groupedData[currentDate] = [];
+
+        // Only add if all required data is present
+        if (typeof miqdori[i] !== 'undefined' &&
+            typeof jami[i] !== 'undefined' &&
+            typeof narxi[i] !== 'undefined') {
+            groupedData[currentDate].push({
+                tovar: tovar[i],
+                miqdori: miqdori[i],
+                jami: intval(String(jami[i]).replace(/,/g, '')),
+                narxi: intval(String(narxi[i]).replace(/,/g, ''))
+            });
+        }
+    }
+
+    // Sort dates (replaces ksort)
+    var dates = Object.keys(groupedData).sort();
+
+    // ---- Render ----
+    var html = '';
+    html += '<div class="receipt-header">Gold Metall Tunkafon Profnastil markazi</div>';
+    html += '<div class="line"></div>';
+
+    var phoneFormatted = substr(telefon, 0, 2) + ' ' + substr(telefon, 2, 3) + ' ' +
+                         substr(telefon, 5, 2) + ' ' + substr(telefon, 7, 2);
+    html += '<div class="transaction-details">'
+          +   '<div><span>Usta ismi:</span><span>' + esc(usta) + '</span></div>'
+          +   '<div><span>Obyekt nomi:</span><span>' + esc(obyekt) + '</span></div>'
+          +   '<div><span>Telefon raqam:</span><span>' + esc(phoneFormatted) + '</span></div>'
+          + '</div>';
+    html += '<div class="line"></div>';
+    html += '<div class="item-header"><span>Tovarlar</span><span>Yig\'indisi</span></div>';
+
+    dates.forEach(function (date) {
+        html += '<div class="date-header">' + esc(date) + '</div>';
+        var counter = 1;
+        groupedData[date].forEach(function (item) {
+            html += '<div class="item">'
+                  +   '<div class="item-number">' + counter + ')</div>'
+                  +   '<div class="item-name">' + esc(item.tovar) + '</div>'
+                  +   '<div class="item-quantity">' + esc(item.miqdori) + ' x ' + numberFormat(item.narxi, 0) + '</div>'
+                  +   '<div class="item-price">' + numberFormat(item.jami, 0) + '</div>'
+                  + '</div>';
+            counter++;
+        });
+    });
+
+    html += '<div class="line"></div>';
+
+    // kvadrat / nerjavinka (2 decimals)
+    var sq = '';
+    if (floatval(getClean('kvadrat')) > 0)
+        sq += '<div class="item"><span>Jami kvadrat:</span><span>' + numberFormat(floatval(getClean('kvadrat')), 2) + '</span></div>';
+    if (floatval(getClean('nerjavinka')) > 0)
+        sq += '<div class="item"><span>Nerjavinka kvadrat:</span><span>' + numberFormat(floatval(getClean('nerjavinka')), 2) + '</span></div>';
+    html += '<div class="total-section">' + sq + '</div>';
+
+    html += '<div class="line"></div>';
+
+    // Totals
+    var totals = '';
+    totals += '<div class="item"><span>Jami:</span><span>' + numberFormat(floatval(getClean('hammasi')), 0) + '</span></div>';
+    totals += '<div class="item"><span>To\'landi:</span><span>' + numberFormat(floatval(getClean('paid')), 0) + '</span></div>';
+    if (floatval(getClean('dollar')) > 0)
+        totals += '<div class="item"><span>To\'landi (dollar):</span><span>' + numberFormat(floatval(getClean('dollar')), 0) + '</span></div>';
+    if (floatval(getClean('qarz')) > 0)
+        totals += '<div class="item"><span>Qarz:</span><span>' + numberFormat(floatval(getClean('qarz')), 0) + '</span></div>';
+    if (floatval(getClean('qaytim')) > 0)
+        totals += '<div class="item"><span>Qaytim:</span><span>' + numberFormat(floatval(getClean('qaytim')), 0) + '</span></div>';
+    html += '<div class="total-section">' + totals + '</div>';
+
+    html += '<div class="line"></div>';
+    html += '<div class="footer">'
+          +   'Bizni tanlaganingiz uchun rahmat!<br><br>'
+          +   'Ulug\'bek +998 95 116 77 88 <br>'
+          +   '<span style="display: inline-block; padding-left: 45px;">+998 99 264 44 44</span>'
+          + '</div>';
+
+    document.getElementById('receipt').innerHTML = html;
+
+    // Auto-print after layout (replaces body onload="window.print()")
+    window.addEventListener('load', function () {
+        window.print();
+    });
+</script>
+</body>
+</html>

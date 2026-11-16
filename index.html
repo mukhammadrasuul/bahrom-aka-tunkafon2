@@ -69,32 +69,42 @@
         .item {
             display: flex;
             justify-content: space-between;
+            align-items: flex-start;
             font-size: 10px;
             margin: 3px 5px;
+            gap: 4px;
         }
 
         .item-number {
-            margin-right: 5px;
+            margin-right: 3px;
+            white-space: nowrap;
         }
 
         .item-name {
             flex-grow: 1;
+            word-break: break-word;
         }
 
         .item-quantity {
-            margin-right: 10px;
+            margin-right: 6px;
             text-align: right;
+            white-space: nowrap;
         }
 
         .item-price {
-            min-width: 60px;
+            min-width: 65px;
             text-align: right;
+            white-space: nowrap;
         }
 
         .total-section {
             font-weight: bold;
             font-size: 12px;
             margin: 5px;
+        }
+
+        .total-section .item span:last-child {
+            white-space: nowrap;
         }
 
         .footer {
@@ -123,8 +133,7 @@
         }
     }
 
-    // cleanInput(): trim(urldecode($str)). Note: URLSearchParams already
-    // decodes once, so this is the second decode the original code did.
+    // cleanInput(): trim(urldecode($str))
     function cleanInput(str) {
         return phpUrldecode(str).trim();
     }
@@ -141,15 +150,21 @@
         return v === null ? '' : cleanInput(v);
     }
 
-    // PHP intval(): leading integer, 0 if not numeric
+    // Clean numeric strings (removes commas, spaces, non-breaking spaces)
+    function cleanNumberString(v) {
+        if (v === null || typeof v === 'undefined') return '0';
+        return String(v).replace(/[,\s\u00A0]/g, '').trim();
+    }
+
+    // Safe integer parser supporting large numbers (> 100,000,000)
     function intval(v) {
-        var n = parseInt(v, 10);
+        var n = Math.round(parseFloat(cleanNumberString(v)));
         return isNaN(n) ? 0 : n;
     }
 
-    // PHP floatval(): leading float, 0 if not numeric
+    // Safe float parser supporting large numbers (> 100,000,000)
     function floatval(v) {
-        var n = parseFloat(v);
+        var n = parseFloat(cleanNumberString(v));
         return isNaN(n) ? 0 : n;
     }
 
@@ -184,28 +199,32 @@
     var narxi   = getCleanList('narxi');
     var sana    = getCleanList('sana');
 
-    var usta    = getClean('usta');
+    var usta    = getClean('usta') || getClean('mijoz');
     var obyekt  = getClean('obyekt');
     var telefon = getClean('telefon');
 
-    // ---- Group items by date (replaces the for-loop + $groupedData) ----
+    // ---- Group items by date ----
     var groupedData = {};
-    for (var i = 0; i < tovar.length; i++) {
-        // Skip empty entries
-        if (!tovar[i] || !sana[i]) continue;
+    var calculatedHammasi = 0;
 
-        var currentDate = sana[i];
+    for (var i = 0; i < tovar.length; i++) {
+        var currentDate = sana[i] || sana[0] || '';
+        if (!tovar[i]) continue;
+
         if (!groupedData[currentDate]) groupedData[currentDate] = [];
 
-        // Only add if all required data is present
         if (typeof miqdori[i] !== 'undefined' &&
             typeof jami[i] !== 'undefined' &&
             typeof narxi[i] !== 'undefined') {
+            var itemJami  = floatval(jami[i]);
+            var itemNarxi = floatval(narxi[i]);
+            calculatedHammasi += itemJami;
+
             groupedData[currentDate].push({
                 tovar: tovar[i],
                 miqdori: miqdori[i],
-                jami: intval(String(jami[i]).replace(/,/g, '')),
-                narxi: intval(String(narxi[i]).replace(/,/g, ''))
+                jami: itemJami,
+                narxi: itemNarxi
             });
         }
     }
@@ -229,7 +248,9 @@
     html += '<div class="item-header"><span>Tovarlar</span><span>Yig\'indisi</span></div>';
 
     dates.forEach(function (date) {
-        html += '<div class="date-header">' + esc(date) + '</div>';
+        if (date) {
+            html += '<div class="date-header">' + esc(date) + '</div>';
+        }
         var counter = 1;
         groupedData[date].forEach(function (item) {
             html += '<div class="item">'
@@ -255,13 +276,19 @@
     html += '<div class="line"></div>';
 
     // Totals
+    var totalHammasi = floatval(getClean('hammasi')) || calculatedHammasi;
+    var obyektQarzi  = floatval(getClean('qarz'));
+    var oziQarzi     = floatval(getClean('ozi_qarzi'));
+
     var totals = '';
-    totals += '<div class="item"><span>Jami:</span><span>' + numberFormat(floatval(getClean('hammasi')), 0) + '</span></div>';
+    totals += '<div class="item"><span>Jami:</span><span>' + numberFormat(totalHammasi, 0) + '</span></div>';
     totals += '<div class="item"><span>To\'landi:</span><span>' + numberFormat(floatval(getClean('paid')), 0) + '</span></div>';
     if (floatval(getClean('dollar')) > 0)
         totals += '<div class="item"><span>To\'landi (dollar):</span><span>' + numberFormat(floatval(getClean('dollar')), 0) + '</span></div>';
-    if (floatval(getClean('qarz')) > 0)
-        totals += '<div class="item"><span>Qarz:</span><span>' + numberFormat(floatval(getClean('qarz')), 0) + '</span></div>';
+    if (obyektQarzi > 0)
+        totals += '<div class="item"><span>Obyekt qarzi:</span><span>' + numberFormat(obyektQarzi, 0) + '</span></div>';
+    if (oziQarzi > 0)
+        totals += '<div class="item"><span>O\'zi olgan qarzi:</span><span>' + numberFormat(oziQarzi, 0) + '</span></div>';
     if (floatval(getClean('qaytim')) > 0)
         totals += '<div class="item"><span>Qaytim:</span><span>' + numberFormat(floatval(getClean('qaytim')), 0) + '</span></div>';
     html += '<div class="total-section">' + totals + '</div>';
@@ -275,7 +302,7 @@
 
     document.getElementById('receipt').innerHTML = html;
 
-    // Auto-print after layout (replaces body onload="window.print()")
+    // Auto-print after layout
     window.addEventListener('load', function () {
         window.print();
     });
